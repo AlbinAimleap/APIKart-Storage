@@ -73,11 +73,13 @@ class ObjectStorage:
             Path(compressed_path).unlink()
             
             schema = FileSchema(
-                file_name=object_name_with_ext,
-                file_name_original=str(input_file.name),
+                file_name=str(input_file.name),
                 file_type=Path(input_file).suffix.replace('.', ''),
+                original_file_size=original_size,
+                file_compression_type=format,
+                key=object_name_with_ext,
                 file_url=url,
-                file_compression_type=format
+                compressed_file_size=compressed_size
             )
             schema.save()
             return url
