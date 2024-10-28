@@ -4,7 +4,7 @@ from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv(".env"))
 
 class Config:
-    DB_TYPE = os.getenv('DB_TYPE', 'sqlite')
+    DB_TYPE = os.getenv('DB_ENGINE', 'sqlite')
     DB_NAME = os.getenv('DB_NAME', 'example.db')
     DB_USER = os.getenv('DB_USER', '')
     DB_PASSWORD = os.getenv('DB_PASSWORD', '')
