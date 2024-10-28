@@ -5,10 +5,12 @@ from datetime import datetime, timezone
 
 
 class FileSchema(BaseSchema):
-    file_name: str = Field(..., description="File name")
-    file_name_original: str = Field(..., description="Original file name")
+    file_name: str = Field(..., description="Original file name")
     file_type: str = Field(..., description="File type")
-    file_url: str = Field(..., description="File URL")
+    original_file_size: float = Field(..., description="Original file size")
     file_compression_type: str = Field(..., description="File Compression type")
+    key: str = Field(..., description="File name")
+    file_url: str = Field(..., description="File URL")
+    compressed_file_size: float = Field(..., description="Compressed file size")
     created_at: datetime = Field(description="Created at", default=datetime.now(tz=timezone.utc))
 

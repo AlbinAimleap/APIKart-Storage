@@ -2,9 +2,17 @@ from typing import Union, Optional
 from pathlib import Path
 from compressor import FileCompressor
 from digital_ocean import DigitalOceanStorage
-import tempfile
+import aiofiles
 from icecream import ic
 from schema import FileSchema
+import asyncio
+import time
+from pydb.logger import setup_logger
+from utils import ExceptionHandler
+
+exception_handler = ExceptionHandler()
+
+logger = setup_logger("Async Object Storage")
 
 class ObjectStorage:
     """A class that combines compression and storage functionality."""
@@ -20,7 +28,7 @@ class ObjectStorage:
         self.storage = DigitalOceanStorage(bucket_name, public_access)
         self.compressor = FileCompressor(compression_level)
     
-    def list_objects(self, prefix: str = "") -> list:
+    async def list_objects(self, prefix: str = "") -> list:
         """List all objects in the storage bucket.
         
         Args:
@@ -30,17 +38,15 @@ class ObjectStorage:
             list: List of object names in the bucket
         """
         try:
-            # Ensure prefix ends with forward slash for directory listing
             if prefix and not prefix.endswith('/'):
                 prefix += '/'
-                
-            objects = self.storage.list_objects(prefix)
-            return objects
+            return await self.storage.list_objects(prefix)
         except Exception as e:
             print(f"Error listing objects: {str(e)}")
-            return []    
+            return []
     
-    def compress_and_upload(
+    @exception_handler.try_except(verbose=True)
+    async def compress_and_upload(
         self, 
         input_file: Union[str, Path], 
         object_name: str,
@@ -61,23 +67,30 @@ class ObjectStorage:
             Optional[str]: URL of the uploaded compressed object if successful, None if failed
         """
         try:
-            with tempfile.NamedTemporaryFile(suffix=f'.{format}', delete=False) as temp_file:
+            async with aiofiles.tempfile.NamedTemporaryFile(suffix=f'.{format}', delete=False) as temp_file:
                 compressed_path = temp_file.name
-                self.compressor.compress(str(input_file), compressed_path, format)
+            
+            compressed_size = await self.compressor.compress(str(input_file), compressed_path, format)
+            original_size = Path(input_file).stat().st_size
+            
             
             object_name_with_ext = f"{object_name}.{format}"
             if folder_path:
                 object_name_with_ext = f"{folder_path.rstrip('/')}/{object_name_with_ext}"
             
-            url = self.storage.store_object(compressed_path, object_name_with_ext, public_access)
+            # logger.info(f"Uploading {input_file.name}")
+            
+            url = await self.storage.store_object(compressed_path, object_name_with_ext, public_access)
             Path(compressed_path).unlink()
             
             schema = FileSchema(
-                file_name=object_name_with_ext,
-                file_name_original=str(input_file.name),
+                file_name=str(input_file.name),
                 file_type=Path(input_file).suffix.replace('.', ''),
+                original_file_size=original_size,
+                file_compression_type=format,
+                key=object_name_with_ext,
                 file_url=url,
-                file_compression_type=format
+                compressed_file_size=compressed_size
             )
             schema.save()
             return url
@@ -86,8 +99,8 @@ class ObjectStorage:
             if Path(compressed_path).exists():
                 Path(compressed_path).unlink()
             return None 
-        
-    def download_and_decompress(
+
+    async def download_and_decompress(
         self,
         object_name: str,
         output_file: Union[str, Path],
@@ -111,17 +124,16 @@ class ObjectStorage:
             else:
                 object_path = object_name
                 
-            with tempfile.NamedTemporaryFile(suffix=f'.{format}', delete=False) as temp_file:
+            async with aiofiles.tempfile.NamedTemporaryFile(suffix=f'.{format}', delete=False) as temp_file:
                 temp_compressed = temp_file.name
             
-            success = self.storage.download_file(object_path, temp_compressed)
-            
+            success = await self.storage.download_file(object_path, temp_compressed)
             if not success:
                 if Path(temp_compressed).exists():
                     Path(temp_compressed).unlink()
                 return False
             
-            self.compressor.decompress(temp_compressed, str(output_file), format)
+            await self.compressor.decompress(temp_compressed, str(output_file), format)
             
             if Path(temp_compressed).exists():
                 Path(temp_compressed).unlink()
@@ -133,31 +145,43 @@ class ObjectStorage:
                 Path(temp_compressed).unlink()
             return False
 
-def main():
-    """
-    Runs the main logic of the application, including compressing and uploading files to DigitalOcean Spaces, listing the uploaded objects, and downloading and decompressing a specific file.
-    Args:
-        None
-    Returns:
-        None
-    """
+async def main():
+    main_process = time.time()
     storage = ObjectStorage(bucket_name='aimleap-storage')
     cur_dir = Path(__file__).resolve().parent
     input_path = cur_dir / "page_data_new"
+
+    files = list(input_path.iterdir())[:100]
+    files_count = len(files)
+    ic(files_count)
     
-    for file in list(input_path.iterdir())[:10]:
-        if file.is_file():
-            url = storage.compress_and_upload(file, file.name, folder_path='data/html')
-            ic(url)
-    
-    # List objects in the specified folder
-    objects = storage.list_objects('data/html')
-    ic(objects)
-    
-    # Download and decompress a specific file
-    downloaded = storage.download_and_decompress('24.95Z OREO PARTY ORIG DBL STUF 8 - Walmart.com.html.zstd', cur_dir / '24.95Z OREO PARTY ORIG DBL STUF 8 - Walmart.com.html', folder_path='data/html')
+    start_time = time.time()
+    tasks = [storage.compress_and_upload(file, file.name, folder_path='data/html', public_access=False) for file in files if file.is_file()]
+    await asyncio.gather(*tasks)
+    elapsed_time = time.time() - start_time
+    compress_and_upload = f"Compression and upload time: {elapsed_time:.2f} seconds"
+    ic(compress_and_upload)
+
+    start_time = time.time()
+    objects = await storage.list_objects('data/html')
+    # ic(objects)
+    elapsed_time = time.time() - start_time
+    list_objects = f"List objects time: {elapsed_time:.2f} seconds"
+    ic(list_objects)
+
+    start_time = time.time()
+    downloaded = await storage.download_and_decompress(
+        '24.95Z OREO PARTY ORIG DBL STUF 8 - Walmart.com.html.zstd',
+        cur_dir / '24.95Z OREO PARTY ORIG DBL STUF 8 - Walmart.com.html',
+        folder_path='data/html'
+    )
     ic(downloaded)
-      
-      
+    elapsed_time = time.time() - start_time
+    download_and_decompress = f"Download and decompress time: {elapsed_time:.2f} seconds"
+    ic(download_and_decompress)
+    main_process_end = time.time() - main_process
+    total_time = f"Total time to process 100 files, list objects, download and decompress 1 file: {main_process_end:.2f} seconds"
+    ic(total_time)
+    
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
