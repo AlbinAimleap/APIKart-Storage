@@ -6,6 +6,8 @@ import tempfile
 from icecream import ic
 from schema import FileSchema
 
+import time
+
 class ObjectStorage:
     """A class that combines compression and storage functionality."""
     
@@ -144,23 +146,43 @@ def main():
     Returns:
         None
     """
+    main_process = time.time()
     storage = ObjectStorage(bucket_name='aimleap-storage')
     cur_dir = Path(__file__).resolve().parent
     input_path = cur_dir / "page_data_new"
     
-    for file in list(input_path.iterdir())[:10]:
+    files = list(input_path.iterdir())[:100]
+    files_count = len(files)
+    ic(files_count)
+    
+    start_time = time.time()
+    for file in files:
         if file.is_file():
             url = storage.compress_and_upload(file, file.name, folder_path='data/html')
-            
+    elapsed_time = time.time() - start_time
+    compress_and_upload = f"Compression and upload time: {elapsed_time:.2f} seconds"
+    ic(compress_and_upload)
     
-    # List objects in the specified folder
+    start_time = time.time()
     objects = storage.list_objects('data/html')
-    ic(objects)
+    elapsed_time = time.time() - start_time
+    list_objects = f"List objects time: {elapsed_time:.2f} seconds"
+    ic(list_objects)
     
-    # Download and decompress a specific file
-    downloaded = storage.download_and_decompress('24.95Z OREO PARTY ORIG DBL STUF 8 - Walmart.com.html.zstd', cur_dir / '24.95Z OREO PARTY ORIG DBL STUF 8 - Walmart.com.html', folder_path='data/html')
+    start_time = time.time()
+    downloaded = storage.download_and_decompress(
+        '24.95Z OREO PARTY ORIG DBL STUF 8 - Walmart.com.html.zstd',
+        cur_dir / '24.95Z OREO PARTY ORIG DBL STUF 8 - Walmart.com.html',
+        folder_path='data/html'
+    )
     ic(downloaded)
-      
+    elapsed_time = time.time() - start_time
+    download_and_decompress = f"Download and decompress time: {elapsed_time:.2f} seconds"
+    ic(download_and_decompress)
+    
+    main_process_end = time.time() - main_process
+    total_time = f"Total time to process 100 files, list objects, download and decompress 1 file: {main_process_end:.2f} seconds"
+    ic(total_time)
       
 if __name__ == "__main__":
     main()
