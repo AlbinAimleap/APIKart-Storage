@@ -103,6 +103,7 @@ class FileCompressor:
         data = self._read_input(input_file)
         compressed_data = self.strategies[format].compress(data, self.compression_level)
         self._write_output(output_file, compressed_data)
+        return os.path.getsize(output_file)
 
     def decompress(self, input_file: Union[str, BinaryIO], output_file: str, format: str = 'zstd') -> None:
         """Decompress the input file from the specified format.

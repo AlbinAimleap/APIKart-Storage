@@ -63,8 +63,9 @@ class ObjectStorage:
         try:
             with tempfile.NamedTemporaryFile(suffix=f'.{format}', delete=False) as temp_file:
                 compressed_path = temp_file.name
-                self.compressor.compress(str(input_file), compressed_path, format)
+                compressed_size = self.compressor.compress(str(input_file), compressed_path, format)
             
+            original_size = Path(input_file).stat().st_size
             object_name_with_ext = f"{object_name}.{format}"
             if folder_path:
                 object_name_with_ext = f"{folder_path.rstrip('/')}/{object_name_with_ext}"
@@ -150,7 +151,7 @@ def main():
     for file in list(input_path.iterdir())[:10]:
         if file.is_file():
             url = storage.compress_and_upload(file, file.name, folder_path='data/html')
-            ic(url)
+            
     
     # List objects in the specified folder
     objects = storage.list_objects('data/html')
